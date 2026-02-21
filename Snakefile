@@ -37,6 +37,13 @@ def read_patches(tsv_path):
             })
     return patches
 
+rule all:
+    input:
+        f"{OUTDIR}/stitched/theta_hist.png",
+        f"{OUTDIR}/stitched/theta_polar.png",
+        f"{OUTDIR}/stitched/orientation_polar.png",
+        f"{OUTDIR}/stitched/lobes.png",
+        f"{OUTDIR}/stitched/ellipsoids.png",
 
 checkpoint make_patches:
     output:
@@ -83,21 +90,6 @@ def patch_targets(wildcards):
             f"{PATCH_DIR}/{tag}/summary/peaks.json",
         ]
     return outs
-
-
-rule all:
-    input:
-        f"{OUTDIR}/stitched/theta_hist.png",
-        f"{OUTDIR}/stitched/theta_polar.png",
-        f"{OUTDIR}/stitched/orientation_polar.png",
-        f"{OUTDIR}/stitched/lobes.png",
-        f"{OUTDIR}/stitched/ellipsoids.png",
-
-
-# Ensures all per-patch outputs exist (dynamic after checkpoint)
-rule per_patch_all:
-    input:
-        patch_targets
 
 
 rule compute_structure_tensor:
@@ -175,8 +167,7 @@ rule stitch_fullsize:
     input:
         tsv   = PATCHES_TSV,
         shape = SHAPE_JSON,
-        # force all per-patch outputs to exist first
-        allpatch = rules.per_patch_all.input,
+        allpatch = patch_targets,
     output:
         theta_hist       = f"{OUTDIR}/stitched/theta_hist.png",
         theta_polar      = f"{OUTDIR}/stitched/theta_polar.png",
