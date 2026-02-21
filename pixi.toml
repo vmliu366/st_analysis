@@ -1,0 +1,20 @@
+[workspace]
+authors = ["vmliu366 <mliu366@uwo.ca>"]
+channels = ["conda-forge", "bioconda"]
+name = "st_analysis"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.11.*"
+numpy = ">=2.4.2,<3"
+pandas = ">=3.0.1,<4"
+scipy = ">=1.17.0,<2"
+matplotlib = ">=3.10.8,<4"
+dask = ">=2026.1.2,<2027"
+distributed = ">=2026.1.2,<2027"
+dask-image = ">=2025.11.0,<2026"
+nibabel = ">=5.3.2,<6"
+snakemake = ">=9.16.2,<10"

@@ -1,0 +1,26 @@
+# Input
+input_zarr_zip: "/home/UWO/mliu366/nibi/projects/rrg-akhanf/khanlab/datasets/internal/histo2mri/bids/sub-T20/micr/sub-T20_sample-anterior_acq-MICA20x_stain-LFB_chunk-024_BF.ome.zarr.zip"
+zarr_level: 3
+channel_index: 0
+
+# Output
+out_dir: "results/sub-T20_sample-anterior"
+
+# Patch tiling
+patch_height: 100
+patch_width: 100
+patch_overlap_y: 0
+patch_overlap_x: 0
+edge_mode: "drop"
+
+# Structure tensor parameters
+sigma_g: 2
+sigma_w: 4
+truncate: 7
+
+# Histogram / peak parameters
+bins: 64
+AI_power: 1.0
+AI_thresh: null
+harmonic_M: 10
+peak_distance: 3
