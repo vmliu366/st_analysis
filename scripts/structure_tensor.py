@@ -110,8 +110,8 @@ def main():
     ap.add_argument("--out-dir", required=True, type=Path)
     args = ap.parse_args()
 
-    out_arrays = args.out_dir / "arrays"
-    out_figs = args.out_dir / "figures"
+    out_arrays = args.out_dir / "st_outputs"
+    out_figs = args.out_dir / "qc"
     out_arrays.mkdir(parents=True, exist_ok=True)
     out_figs.mkdir(parents=True, exist_ok=True)
 

@@ -3,13 +3,13 @@
 Stitch full-size HxW PNGs from per-patch outputs.
 
 Per patch (pixel-exact PNGs):
-  - figures/orientation.png         (RGB)
-  - figures/lobes.png               (RGB)
-  - figures/AI.png                  (L / grayscale)
+  - qc/orientation.png         (RGB)
+  - qc/lobes.png               (RGB)
+  - qc/AI.png                  (L / grayscale)
 
 Per patch (arrays):
-  - arrays/theta.npy                (ph, pw)
-  - arrays/AI.npy                   (ph, pw)
+  - st_outputs/theta.npy                (ph, pw)
+  - st_outputs/AI.npy                   (ph, pw)
 
 Outputs:
   - out-orientation (RGB)  [tile-copy]
@@ -212,7 +212,7 @@ def main():
         tag = f"py{py}_px{px}"
 
         # ---- Copy orientation.png ----
-        ori_path = args.patch_root / tag / "figures" / "orientation.png"
+        ori_path = args.patch_root / tag / "qc" / "orientation.png"
         if not ori_path.exists():
             raise FileNotFoundError(f"Missing orientation.png: {ori_path}")
         ori_img = Image.open(ori_path).convert("RGB")
@@ -223,7 +223,7 @@ def main():
         orientation_canvas[y0:y1, x0:x1, :] = np.asarray(ori_img, dtype=np.uint8)
 
         # ---- Copy lobes.png ----
-        lobes_path = args.patch_root / tag / "figures" / "lobes.png"
+        lobes_path = args.patch_root / tag / "qc" / "lobes.png"
         if not lobes_path.exists():
             raise FileNotFoundError(f"Missing lobes.png: {lobes_path}")
         lobes_img = Image.open(lobes_path).convert("RGB")
@@ -235,7 +235,7 @@ def main():
 
         # ---- Copy AI.png (optional) ----
         if ai_canvas is not None:
-            ai_path = args.patch_root / tag / "figures" / "AI.png"
+            ai_path = args.patch_root / tag / "qc" / "AI.png"
             if not ai_path.exists():
                 raise FileNotFoundError(f"Missing AI.png: {ai_path}")
             ai_img = Image.open(ai_path).convert("L")
@@ -246,7 +246,7 @@ def main():
             ai_canvas[y0:y1, x0:x1] = np.asarray(ai_img, dtype=np.uint8)
 
         # ---- Copy ellipsoids.png (RGB) ----
-        ell_path = args.patch_root / tag / "figures" / "ellipsoids.png"
+        ell_path = args.patch_root / tag / "qc" / "ellipsoids.png"
         if not ell_path.exists():
             raise FileNotFoundError(f"Missing ellipsoids.png: {ell_path}")
         ell_img = Image.open(ell_path).convert("RGB")

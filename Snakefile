@@ -82,17 +82,16 @@ def patch_targets(wildcards):
         tag = f"py{p['py']}_px{p['px']}"
         outs += [
             # required for ellipsoids
-            f"{PATCH_DIR}/{tag}/arrays/theta.npy",
-            f"{PATCH_DIR}/{tag}/arrays/AI.npy",
+            f"{PATCH_DIR}/{tag}/st_outputs/theta.npy",
+            f"{PATCH_DIR}/{tag}/st_outputs/AI.npy",
 
-            # required for tile-copy stitched outputs
-            f"{PATCH_DIR}/{tag}/figures/orientation.png",
-            f"{PATCH_DIR}/{tag}/figures/AI.png",
-            f"{PATCH_DIR}/{tag}/figures/lobes.png",
-            f"{PATCH_DIR}/{tag}/figures/ellipsoids.png",
+            # required for tile-stitched outputs
+            f"{PATCH_DIR}/{tag}/qc/orientation.png",
+            f"{PATCH_DIR}/{tag}/qc/AI.png",
+            f"{PATCH_DIR}/{tag}/qc/lobes.png",
+            f"{PATCH_DIR}/{tag}/qc/ellipsoids.png",
 
-            # forces qc_lobe_vis to run (and will also enforce theta_hist.png exists)
-            f"{PATCH_DIR}/{tag}/summary/peaks.json",
+            f"{PATCH_DIR}/{tag}/qc/theta_hist.json",
         ]
     return outs
 
@@ -101,13 +100,13 @@ rule compute_structure_tensor:
     input:
         tsv = PATCHES_TSV
     output:
-        roi      = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/roi.npy",
-        J        = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/J.npy",
-        theta    = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/theta.npy",
-        AI       = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/AI.npy",
-        eigenvals= f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/eigenvals.npy",
-        ori_png  = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/orientation.png",
-        ai_png   = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/AI.png",
+        roi      = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/roi.npy",
+        J        = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/J.npy",
+        theta    = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/theta.npy",
+        AI       = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/AI.npy",
+        eigenvals= f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/eigenvals.npy",
+        ori_png  = f"{PATCH_DIR}/py{{py}}_px{{px}}/qc/orientation.png",
+        ai_png   = f"{PATCH_DIR}/py{{py}}_px{{px}}/qc/AI.png",
     params:
         input_zarr_zip = config["input_zarr_zip"],
         zarr_level     = config["zarr_level"],
@@ -142,15 +141,15 @@ rule compute_structure_tensor:
 
 rule qc_lobe_vis:
     input:
-        roi   = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/roi.npy",
-        theta = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/theta.npy",
-        AI    = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/AI.npy",
-        eigenvals= f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/eigenvals.npy",
+        roi   = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/roi.npy",
+        theta = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/theta.npy",
+        AI    = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/AI.npy",
+        eigenvals= f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/eigenvals.npy",
     output:
-        js             = f"{PATCH_DIR}/py{{py}}_px{{px}}/summary/peaks.json",
-        theta_hist_png = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/theta_hist.png",
-        lobes_png      = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/lobes.png",
-        ellipsoids_png = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/ellipsoids.png",
+        theta_hist_json = f"{PATCH_DIR}/py{{py}}_px{{px}}/qc/theta_hist.json",
+        theta_hist_png = f"{PATCH_DIR}/py{{py}}_px{{px}}/qc/theta_hist.png",
+        lobes_png      = f"{PATCH_DIR}/py{{py}}_px{{px}}/qc/lobes.png",
+        ellipsoids_png = f"{PATCH_DIR}/py{{py}}_px{{px}}/qc/ellipsoids.png",
     params:
         bins          = config["bins"],
         AI_power      = config["AI_power"],
@@ -164,11 +163,10 @@ rule qc_lobe_vis:
             "--theta-npy", input.theta,
             "--ai-npy", input.AI,
             "--eigenvals-npy", input.eigenvals,
-            "--out-json", output.js,
+            "--out-theta-hist-json", output.theta_hist_json,
             "--out-theta-hist-png", output.theta_hist_png,
             "--out-lobes-png", output.lobes_png,
             "--out-ellipsoids-png", output.ellipsoids_png,
-            "--ellipsoid-step", "8",
             "--bins", str(params.bins),
             "--ai-power", str(params.AI_power),
             "--harmonic-m", str(params.harmonic_M),

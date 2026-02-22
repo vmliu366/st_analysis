@@ -1,5 +1,5 @@
 # Input
-input_zarr_zip: "/home/UWO/mliu366/nibi/projects/rrg-akhanf/khanlab/datasets/internal/histo2mri/bids/sub-T20/micr/sub-T20_sample-anterior_acq-MICA20x_stain-LFB_chunk-024_BF.ome.zarr.zip"
+input_zarr_zip: "./sub-T20_sample-anterior_acq-MICA20x_stain-LFB_chunk-024_BF.ome.zarr.zip"
 zarr_level: 3
 channel_index: 0
 
@@ -7,8 +7,8 @@ channel_index: 0
 out_dir: "results/sub-T20_sample-anterior"
 
 # Patch tiling
-patch_height: 1000
-patch_width: 1000
+patch_height: 100
+patch_width: 100
 patch_overlap_y: 0
 patch_overlap_x: 0
 edge_mode: "drop"
