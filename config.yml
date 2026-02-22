@@ -7,8 +7,8 @@ channel_index: 0
 out_dir: "results/sub-T20_sample-anterior"
 
 # Patch tiling
-patch_height: 100
-patch_width: 100
+patch_height: 1000
+patch_width: 1000
 patch_overlap_y: 0
 patch_overlap_x: 0
 edge_mode: "drop"

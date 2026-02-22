@@ -1,31 +1,36 @@
 #!/usr/bin/env python
-#
-# Produces 5 full-size HxW PNGs (exact pixel dimensions of the plane).
-#
-# Requirements / assumptions:
-# 1) patches.tsv has columns: py px y0 y1 x0 x1
-# 2) shape.json has keys: H, W
-# 3) patch-root contains directories: py{py}_px{px}/...
-# 4) For each patch:
-#    - summary/peaks.json exists with:
-#         {"peak_angles":[a1,a2], "peak_amps":[p1,p2], "peak_ratio": r}
-#    - figures/orientation_polar.png exists and is EXACTLY (patch_width x patch_height) pixels
-#    - arrays/theta.npy and arrays/AI.npy exist (for ellipsoids map)
-#
-# Output encodings (RGB):
-# - theta_hist.png: per-patch, hue=peak1 angle, value=normalized peak1 amp
-# - theta_polar.png: per-patch, hue=peak2 angle, value=normalized peak2 amp
-# - orientation_polar.png: per-pixel orientation RGB copied from patch PNG
-# - lobes.png: per-patch, hue=peak1 angle, value=normalized peak1 amp, saturation=clamped peak_ratio
-# - ellipsoids.png: per-pixel, hue=theta/pi, value=AI, saturation=1.0
+"""
+Stitch full-size HxW PNGs from per-patch outputs.
+
+Per patch (pixel-exact PNGs):
+  - figures/orientation.png         (RGB)
+  - figures/lobes.png               (RGB)
+  - figures/AI.png                  (L / grayscale)
+
+Per patch (arrays):
+  - arrays/theta.npy                (ph, pw)
+  - arrays/AI.npy                   (ph, pw)
+
+Outputs:
+  - out-orientation (RGB)  [tile-copy]
+  - out-lobes       (RGB)  [tile-copy]
+  - out-ai          (L)    [tile-copy] (optional)
+  - out-ellipsoids  (RGB)  [computed HSV from theta+AI arrays]
+"""
 
 import argparse
 import json
 from pathlib import Path
-
 import numpy as np
 from PIL import Image
+import numpy as np
+from matplotlib import cm
 
+def roi_to_rgb_background_uint8(roi_np: np.ndarray) -> np.ndarray:
+    p1, p99 = np.percentile(roi_np, [1, 99])
+    bg01 = np.clip((roi_np - p1) / (p99 - p1 + 1e-12), 0, 1)
+    bg8 = (bg01 * 255.0).astype(np.uint8)
+    return np.stack([bg8, bg8, bg8], axis=-1)  # (H,W,3)
 
 def read_patches(tsv_path: Path):
     patches = []
@@ -51,11 +56,6 @@ def read_patches(tsv_path: Path):
 
 
 def hsv_to_rgb_uint8(H, S, V):
-    """
-    Vectorized HSV (0..1 floats) -> RGB uint8.
-    H,S,V can be broadcastable arrays with last dim absent.
-    Returns uint8 array (...,3).
-    """
     H = np.mod(H, 1.0)
     S = np.clip(S, 0.0, 1.0)
     V = np.clip(V, 0.0, 1.0)
@@ -69,38 +69,112 @@ def hsv_to_rgb_uint8(H, S, V):
 
     i = i % 6
 
-    r = np.select(
-        [i == 0, i == 1, i == 2, i == 3, i == 4, i == 5],
-        [V, q, p, p, t, V],
-        default=V,
-    )
-    g = np.select(
-        [i == 0, i == 1, i == 2, i == 3, i == 4, i == 5],
-        [t, V, V, q, p, p],
-        default=V,
-    )
-    b = np.select(
-        [i == 0, i == 1, i == 2, i == 3, i == 4, i == 5],
-        [p, p, t, V, V, q],
-        default=V,
-    )
+    r = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5],
+                  [V, q, p, p, t, V], default=V)
+    g = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5],
+                  [t, V, V, q, p, p], default=V)
+    b = np.select([i == 0, i == 1, i == 2, i == 3, i == 4, i == 5],
+                  [p, p, t, V, V, q], default=V)
 
     rgb = np.stack([r, g, b], axis=-1)
     return (np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8)
 
+def render_ellipsoids(
+    roi_np: np.ndarray,
+    eigenvals_np: np.ndarray,
+    peak_angle_rad: float,
+    step: int = 8,
+    alpha: float = 0.6,
+    qmin: float = 0.02,
+    qmax: float = 0.98,
+    min_w_frac: float = 0.15,
+    max_w_frac: float = 0.80,
+    min_h_frac: float = 0.05,
+    max_h_frac: float = 0.40,
+) -> np.ndarray:
+    """
+    roi_np: (H,W) float/uint
+    eigenvals_np: (H,W,2) float, eigenvals[...,0]=lam1 (minor), eigenvals[...,1]=lam2 (major)
+    peak_angle_rad: scalar in [0, pi)
+    Returns RGB uint8 image (H,W,3) exactly.
+    """
+    H, W = roi_np.shape
+    out = roi_to_rgb_background_uint8(roi_np).astype(np.float32)
 
-def load_peaks_json(path: Path):
-    obj = json.loads(path.read_text())
-    peak_angles = obj.get("peak_angles", [0.0, 0.0])
-    peak_amps = obj.get("peak_amps", [0.0, 0.0])
-    ratio = obj.get("peak_ratio", 0.0)
-    # sanitize
-    a1 = float(peak_angles[0]) if len(peak_angles) > 0 else 0.0
-    a2 = float(peak_angles[1]) if len(peak_angles) > 1 else 0.0
-    p1 = float(peak_amps[0]) if len(peak_amps) > 0 else 0.0
-    p2 = float(peak_amps[1]) if len(peak_amps) > 1 else 0.0
-    ratio = float(ratio)
-    return a1, a2, p1, p2, ratio
+    # grid centers
+    Y, X = np.mgrid[step//2:H:step, step//2:W:step]
+    ys = Y.ravel().astype(int)
+    xs = X.ravel().astype(int)
+
+    # sample eigenvalues at centers
+    lam0 = eigenvals_np[..., 0]  # minor
+    lam1 = eigenvals_np[..., 1]  # major
+    lam0_s = lam0[ys, xs]
+    lam1_s = lam1[ys, xs]
+
+    # robust normalize eigenvalues -> [0,1]
+    both = np.stack([lam0_s, lam1_s], axis=-1)
+    ev_min = np.quantile(both, qmin)
+    ev_max = np.quantile(both, qmax)
+    eps = 1e-12
+    def scale(a):
+        return np.clip((a - ev_min) / (ev_max - ev_min + eps), 0, 1)
+
+    lam0_n = scale(lam0_s)
+    lam1_n = scale(lam1_s)
+
+    # ellipse size ranges (pixels)
+    min_w, max_w = step * min_w_frac, step * max_w_frac  # major axis uses lam1_n
+    min_h, max_h = step * min_h_frac, step * max_h_frac  # minor axis uses lam0_n
+
+    widths  = min_w + lam1_n * (max_w - min_w)  # major axis length
+    heights = min_h + lam0_n * (max_h - min_h)  # minor axis length
+
+    # color: constant hue from primary direction
+    hue = (peak_angle_rad / np.pi) % 1.0
+    color_rgba = cm.hsv(hue)  # (r,g,b,a) with a=1
+    col = np.array(color_rgba[:3], dtype=np.float32) * 255.0  # RGB in 0..255
+
+    # rotation: your plotting used angle_deg = degrees(theta) + 90.
+    # Keep the same convention:
+    ang = peak_angle_rad + 0.5 * np.pi
+    ca = np.cos(ang)
+    sa = np.sin(ang)
+
+    # draw each ellipse in a local bounding box (fast enough for patch-sized images)
+    for (y0, x0, w, h) in zip(ys, xs, widths, heights):
+        a = 0.5 * float(w)  # semi-major
+        b = 0.5 * float(h)  # semi-minor
+        if a <= 0.5 or b <= 0.5:
+            continue
+
+        # bounding box in pixel coords
+        r = int(np.ceil(max(a, b))) + 1
+        y_min = max(0, y0 - r)
+        y_max = min(H, y0 + r + 1)
+        x_min = max(0, x0 - r)
+        x_max = min(W, x0 + r + 1)
+
+        yy, xx = np.mgrid[y_min:y_max, x_min:x_max]
+        dy = (yy - y0).astype(np.float32)
+        dx = (xx - x0).astype(np.float32)
+
+        # rotate coords into ellipse frame
+        xpr =  ca * dx + sa * dy
+        ypr = -sa * dx + ca * dy
+
+        mask = (xpr * xpr) / (a * a + 1e-12) + (ypr * ypr) / (b * b + 1e-12) <= 1.0
+        if not np.any(mask):
+            continue
+
+        # alpha blend
+        sub = out[y_min:y_max, x_min:x_max, :]
+        sub[mask] = alpha * col + (1.0 - alpha) * sub[mask]
+        out[y_min:y_max, x_min:x_max, :] = sub
+
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
 
 
 def main():
@@ -109,11 +183,10 @@ def main():
     ap.add_argument("--shape-json", required=True, type=Path)
     ap.add_argument("--patch-root", required=True, type=Path)
 
-    ap.add_argument("--out-theta-hist", required=True, type=Path)
-    ap.add_argument("--out-theta-polar", required=True, type=Path)
-    ap.add_argument("--out-orientation-polar", required=True, type=Path)
+    ap.add_argument("--out-orientation", required=True, type=Path)
     ap.add_argument("--out-lobes", required=True, type=Path)
     ap.add_argument("--out-ellipsoids", required=True, type=Path)
+    ap.add_argument("--out-ai", required=False, type=Path, default=None)
     args = ap.parse_args()
 
     patches = read_patches(args.patches_tsv)
@@ -124,125 +197,77 @@ def main():
     H = int(shape["H"])
     W = int(shape["W"])
 
-    # Full-size canvases (RGB uint8)
-    theta_hist_canvas = np.zeros((H, W, 3), dtype=np.uint8)
-    theta_polar_canvas = np.zeros((H, W, 3), dtype=np.uint8)
     orientation_canvas = np.zeros((H, W, 3), dtype=np.uint8)
     lobes_canvas = np.zeros((H, W, 3), dtype=np.uint8)
     ellipsoids_canvas = np.zeros((H, W, 3), dtype=np.uint8)
+    ai_canvas = None
+    if args.out_ai is not None:
+        ai_canvas = np.zeros((H, W), dtype=np.uint8)
 
-    # First pass: find global max amps to normalize value channel consistently
-    p1_all = []
-    p2_all = []
-    for p in patches:
-        tag = f"py{p['py']}_px{p['px']}"
-        peaks_path = args.patch_root / tag / "summary" / "peaks.json"
-        if not peaks_path.exists():
-            raise FileNotFoundError(f"Missing peaks.json: {peaks_path}")
-        _a1, _a2, p1, p2, _r = load_peaks_json(peaks_path)
-        p1_all.append(p1)
-        p2_all.append(p2)
-
-    p1_max = max(p1_all) if p1_all else 1.0
-    p2_max = max(p2_all) if p2_all else 1.0
-    if p1_max <= 1e-12:
-        p1_max = 1.0
-    if p2_max <= 1e-12:
-        p2_max = 1.0
-
-    # Second pass: fill canvases
     for p in patches:
         py, px = p["py"], p["px"]
         y0, y1, x0, x1 = p["y0"], p["y1"], p["x0"], p["x1"]
-        tag = f"py{py}_px{px}"
-
-        # ---- Patch-level peak encodings ----
-        peaks_path = args.patch_root / tag / "summary" / "peaks.json"
-        a1, a2, p1, p2, ratio = load_peaks_json(peaks_path)
-
-        # normalize to 0..1
-        v1 = np.clip(p1 / p1_max, 0.0, 1.0)
-        v2 = np.clip(p2 / p2_max, 0.0, 1.0)
-        s_ratio = np.clip(ratio, 0.0, 1.0)
-
-        # hue is angle/pi
-        h1 = (a1 / np.pi) % 1.0
-        h2 = (a2 / np.pi) % 1.0
-
-        # make solid-color tiles (patch size)
         ph = y1 - y0
         pw = x1 - x0
+        tag = f"py{py}_px{px}"
 
-        tile_hist = hsv_to_rgb_uint8(
-            H=np.full((ph, pw), h1, dtype=np.float32),
-            S=np.ones((ph, pw), dtype=np.float32),
-            V=np.full((ph, pw), v1, dtype=np.float32),
-        )
-        tile_polar = hsv_to_rgb_uint8(
-            H=np.full((ph, pw), h2, dtype=np.float32),
-            S=np.ones((ph, pw), dtype=np.float32),
-            V=np.full((ph, pw), v2, dtype=np.float32),
-        )
-        tile_lobes = hsv_to_rgb_uint8(
-            H=np.full((ph, pw), h1, dtype=np.float32),
-            S=np.full((ph, pw), s_ratio, dtype=np.float32),
-            V=np.full((ph, pw), v1, dtype=np.float32),
-        )
-
-        theta_hist_canvas[y0:y1, x0:x1, :] = tile_hist
-        theta_polar_canvas[y0:y1, x0:x1, :] = tile_polar
-        lobes_canvas[y0:y1, x0:x1, :] = tile_lobes
-
-        # ---- Per-pixel orientation_polar.png copied exactly ----
-        ori_path = args.patch_root / tag / "figures" / "orientation_polar.png"
+        # ---- Copy orientation.png ----
+        ori_path = args.patch_root / tag / "figures" / "orientation.png"
         if not ori_path.exists():
-            raise FileNotFoundError(f"Missing orientation_polar.png: {ori_path}")
+            raise FileNotFoundError(f"Missing orientation.png: {ori_path}")
         ori_img = Image.open(ori_path).convert("RGB")
         if ori_img.size != (pw, ph):
             raise ValueError(
-                f"Patch image size mismatch for {ori_path}: got {ori_img.size}, expected {(pw, ph)}. "
-                f"Ensure patch PNGs are saved pixel-exact (no matplotlib tight bbox)."
+                f"Patch orientation size mismatch for {ori_path}: got {ori_img.size}, expected {(pw, ph)}."
             )
         orientation_canvas[y0:y1, x0:x1, :] = np.asarray(ori_img, dtype=np.uint8)
 
-        # ---- Ellipsoids map (per-pixel theta+AI) ----
-        theta_path = args.patch_root / tag / "arrays" / "theta.npy"
-        ai_path = args.patch_root / tag / "arrays" / "AI.npy"
-        if not theta_path.exists():
-            raise FileNotFoundError(f"Missing theta.npy: {theta_path}")
-        if not ai_path.exists():
-            raise FileNotFoundError(f"Missing AI.npy: {ai_path}")
-
-        theta = np.load(theta_path)  # (ph, pw)
-        AI = np.load(ai_path)        # (ph, pw)
-        if theta.shape != (ph, pw) or AI.shape != (ph, pw):
+        # ---- Copy lobes.png ----
+        lobes_path = args.patch_root / tag / "figures" / "lobes.png"
+        if not lobes_path.exists():
+            raise FileNotFoundError(f"Missing lobes.png: {lobes_path}")
+        lobes_img = Image.open(lobes_path).convert("RGB")
+        if lobes_img.size != (pw, ph):
             raise ValueError(
-                f"Array shape mismatch in {tag}: theta {theta.shape}, AI {AI.shape}, expected {(ph, pw)}"
+                f"Patch lobes size mismatch for {lobes_path}: got {lobes_img.size}, expected {(pw, ph)}."
             )
+        lobes_canvas[y0:y1, x0:x1, :] = np.asarray(lobes_img, dtype=np.uint8)
 
-        # Hue=theta/pi, Value=AI, Saturation=1
-        ell_tile = hsv_to_rgb_uint8(
-            H=(theta / np.pi).astype(np.float32),
-            S=np.ones((ph, pw), dtype=np.float32),
-            V=np.clip(AI, 0.0, 1.0).astype(np.float32),
-        )
-        ellipsoids_canvas[y0:y1, x0:x1, :] = ell_tile
+        # ---- Copy AI.png (optional) ----
+        if ai_canvas is not None:
+            ai_path = args.patch_root / tag / "figures" / "AI.png"
+            if not ai_path.exists():
+                raise FileNotFoundError(f"Missing AI.png: {ai_path}")
+            ai_img = Image.open(ai_path).convert("L")
+            if ai_img.size != (pw, ph):
+                raise ValueError(
+                    f"Patch AI size mismatch for {ai_path}: got {ai_img.size}, expected {(pw, ph)}."
+                )
+            ai_canvas[y0:y1, x0:x1] = np.asarray(ai_img, dtype=np.uint8)
 
-    # Save outputs (RGB PNG)
-    args.out_theta_hist.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(theta_hist_canvas, mode="RGB").save(args.out_theta_hist)
+        # ---- Copy ellipsoids.png (RGB) ----
+        ell_path = args.patch_root / tag / "figures" / "ellipsoids.png"
+        if not ell_path.exists():
+            raise FileNotFoundError(f"Missing ellipsoids.png: {ell_path}")
+        ell_img = Image.open(ell_path).convert("RGB")
+        if ell_img.size != (pw, ph):
+            raise ValueError(
+                f"Patch ellipsoids size mismatch for {ell_path}: got {ell_img.size}, expected {(pw, ph)}."
+            )
+        ellipsoids_canvas[y0:y1, x0:x1, :] = np.asarray(ell_img, dtype=np.uint8)
 
-    args.out_theta_polar.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(theta_polar_canvas, mode="RGB").save(args.out_theta_polar)
-
-    args.out_orientation_polar.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(orientation_canvas, mode="RGB").save(args.out_orientation_polar)
+    args.out_orientation.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(orientation_canvas, mode="RGB").save(args.out_orientation)
 
     args.out_lobes.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(lobes_canvas, mode="RGB").save(args.out_lobes)
 
     args.out_ellipsoids.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(ellipsoids_canvas, mode="RGB").save(args.out_ellipsoids)
+
+    if args.out_ai is not None:
+        args.out_ai.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(ai_canvas, mode="L").save(args.out_ai)
 
 
 if __name__ == "__main__":

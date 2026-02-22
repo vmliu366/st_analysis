@@ -1,7 +1,5 @@
 configfile: "config.yml"
 
-from pathlib import Path
-
 OUTDIR = config["out_dir"]
 
 PATCH_H = int(config.get("patch_height", 100))
@@ -15,35 +13,13 @@ PATCHES_TSV = f"{PATCH_DIR}/patches.tsv"
 SHAPE_JSON  = f"{PATCH_DIR}/shape.json"
 
 
-def read_patches(tsv_path):
-    patches = []
-    with open(tsv_path, "r") as f:
-        header = f.readline().strip().split("\t")
-        i_py = header.index("py")
-        i_px = header.index("px")
-        i_y0 = header.index("y0")
-        i_y1 = header.index("y1")
-        i_x0 = header.index("x0")
-        i_x1 = header.index("x1")
-        for line in f:
-            parts = line.strip().split("\t")
-            patches.append({
-                "py": int(parts[i_py]),
-                "px": int(parts[i_px]),
-                "y0": int(parts[i_y0]),
-                "y1": int(parts[i_y1]),
-                "x0": int(parts[i_x0]),
-                "x1": int(parts[i_x1]),
-            })
-    return patches
-
 rule all:
     input:
-        f"{OUTDIR}/stitched/theta_hist.png",
-        f"{OUTDIR}/stitched/theta_polar.png",
-        f"{OUTDIR}/stitched/orientation_polar.png",
+        f"{OUTDIR}/stitched/orientation.png",
+        f"{OUTDIR}/stitched/AI.png",
         f"{OUTDIR}/stitched/lobes.png",
         f"{OUTDIR}/stitched/ellipsoids.png",
+
 
 checkpoint make_patches:
     output:
@@ -74,8 +50,30 @@ checkpoint make_patches:
         """
 
 
+def read_patches(tsv_path):
+    patches = []
+    with open(tsv_path, "r") as f:
+        header = f.readline().strip().split("\t")
+        i_py = header.index("py")
+        i_px = header.index("px")
+        i_y0 = header.index("y0")
+        i_y1 = header.index("y1")
+        i_x0 = header.index("x0")
+        i_x1 = header.index("x1")
+        for line in f:
+            parts = line.strip().split("\t")
+            patches.append({
+                "py": int(parts[i_py]),
+                "px": int(parts[i_px]),
+                "y0": int(parts[i_y0]),
+                "y1": int(parts[i_y1]),
+                "x0": int(parts[i_x0]),
+                "x1": int(parts[i_x1]),
+            })
+    return patches
+
+
 def patch_targets(wildcards):
-    # This function is evaluated after the checkpoint completes
     ck = checkpoints.make_patches.get(**wildcards)
     patches = read_patches(ck.output.tsv)
 
@@ -83,10 +81,17 @@ def patch_targets(wildcards):
     for p in patches:
         tag = f"py{p['py']}_px{p['px']}"
         outs += [
+            # required for ellipsoids
             f"{PATCH_DIR}/{tag}/arrays/theta.npy",
             f"{PATCH_DIR}/{tag}/arrays/AI.npy",
-            f"{PATCH_DIR}/{tag}/arrays/eigenvals.npy",
-            f"{PATCH_DIR}/{tag}/figures/orientation_polar.png",
+
+            # required for tile-copy stitched outputs
+            f"{PATCH_DIR}/{tag}/figures/orientation.png",
+            f"{PATCH_DIR}/{tag}/figures/AI.png",
+            f"{PATCH_DIR}/{tag}/figures/lobes.png",
+            f"{PATCH_DIR}/{tag}/figures/ellipsoids.png",
+
+            # forces qc_lobe_vis to run (and will also enforce theta_hist.png exists)
             f"{PATCH_DIR}/{tag}/summary/peaks.json",
         ]
     return outs
@@ -96,12 +101,13 @@ rule compute_structure_tensor:
     input:
         tsv = PATCHES_TSV
     output:
-        roi2      = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/roi2.npy",
-        J         = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/J.npy",
-        theta     = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/theta.npy",
-        AI        = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/AI.npy",
-        eigenvals = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/eigenvals.npy",
-        ori_png   = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/orientation_polar.png",
+        roi      = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/roi.npy",
+        J        = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/J.npy",
+        theta    = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/theta.npy",
+        AI       = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/AI.npy",
+        eigenvals= f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/eigenvals.npy",
+        ori_png  = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/orientation.png",
+        ai_png   = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/AI.png",
     params:
         input_zarr_zip = config["input_zarr_zip"],
         zarr_level     = config["zarr_level"],
@@ -134,12 +140,17 @@ rule compute_structure_tensor:
         )
 
 
-rule peaks_summary_patch:
+rule qc_lobe_vis:
     input:
+        roi   = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/roi.npy",
         theta = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/theta.npy",
         AI    = f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/AI.npy",
+        eigenvals= f"{PATCH_DIR}/py{{py}}_px{{px}}/arrays/eigenvals.npy",
     output:
-        js = f"{PATCH_DIR}/py{{py}}_px{{px}}/summary/peaks.json",
+        js             = f"{PATCH_DIR}/py{{py}}_px{{px}}/summary/peaks.json",
+        theta_hist_png = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/theta_hist.png",
+        lobes_png      = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/lobes.png",
+        ellipsoids_png = f"{PATCH_DIR}/py{{py}}_px{{px}}/figures/ellipsoids.png",
     params:
         bins          = config["bins"],
         AI_power      = config["AI_power"],
@@ -149,9 +160,15 @@ rule peaks_summary_patch:
     run:
         cmd = [
             "python", "scripts/peak_vis.py",
+            "--roi-npy", input.roi,
             "--theta-npy", input.theta,
             "--ai-npy", input.AI,
+            "--eigenvals-npy", input.eigenvals,
             "--out-json", output.js,
+            "--out-theta-hist-png", output.theta_hist_png,
+            "--out-lobes-png", output.lobes_png,
+            "--out-ellipsoids-png", output.ellipsoids_png,
+            "--ellipsoid-step", "8",
             "--bins", str(params.bins),
             "--ai-power", str(params.AI_power),
             "--harmonic-m", str(params.harmonic_M),
@@ -162,18 +179,16 @@ rule peaks_summary_patch:
         shell(" ".join(cmd))
 
 
-# Final stitch step: produces full-size HxW outputs
-rule stitch_fullsize:
+rule stitch_maps:
     input:
-        tsv   = PATCHES_TSV,
-        shape = SHAPE_JSON,
+        tsv      = PATCHES_TSV,
+        shape    = SHAPE_JSON,
         allpatch = patch_targets,
     output:
-        theta_hist       = f"{OUTDIR}/stitched/theta_hist.png",
-        theta_polar      = f"{OUTDIR}/stitched/theta_polar.png",
-        orientation_polar= f"{OUTDIR}/stitched/orientation_polar.png",
-        lobes            = f"{OUTDIR}/stitched/lobes.png",
-        ellipsoids       = f"{OUTDIR}/stitched/ellipsoids.png",
+        orientation = f"{OUTDIR}/stitched/orientation.png",
+        AI          = f"{OUTDIR}/stitched/AI.png",
+        lobes       = f"{OUTDIR}/stitched/lobes.png",
+        ellipsoids  = f"{OUTDIR}/stitched/ellipsoids.png",
     params:
         patch_root = PATCH_DIR,
     shell:
@@ -182,9 +197,8 @@ rule stitch_fullsize:
           --patches-tsv "{input.tsv}" \
           --shape-json "{input.shape}" \
           --patch-root "{params.patch_root}" \
-          --out-theta-hist "{output.theta_hist}" \
-          --out-theta-polar "{output.theta_polar}" \
-          --out-orientation-polar "{output.orientation_polar}" \
+          --out-orientation "{output.orientation}" \
+          --out-ai "{output.AI}" \
           --out-lobes "{output.lobes}" \
           --out-ellipsoids "{output.ellipsoids}"
         """
