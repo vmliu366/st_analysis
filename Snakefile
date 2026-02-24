@@ -12,6 +12,8 @@ PATCH_DIR   = f"{OUTDIR}/patches"
 PATCHES_TSV = f"{PATCH_DIR}/patches.tsv"
 SHAPE_JSON  = f"{PATCH_DIR}/shape.json"
 
+MASKS_DIR  = f"{OUTDIR}/masks"
+MASK_NII   = f"{MASKS_DIR}/mask_level{config['zarr_level']}.nii.gz"
 
 rule all:
     input:
@@ -19,6 +21,8 @@ rule all:
         f"{OUTDIR}/stitched/AI.png",
         f"{OUTDIR}/stitched/lobes.png",
         f"{OUTDIR}/stitched/ellipsoids.png",
+        f"{OUTDIR}/stitched/theta.nii.gz",
+        f"{OUTDIR}/stitched/AI.nii.gz",
 
 
 checkpoint make_patches:
@@ -95,6 +99,64 @@ def patch_targets(wildcards):
         ]
     return outs
 
+def load_mask_2d(mask_nii: str, input_zarr_zip: str, zarr_level: int, channel_index: int, out_mask_nii: str):
+    """
+    Load a binary NIfTI mask that was created on the level-5 OME-Zarr grid, resample it
+    to the target OME-Zarr level (config['zarr_level']), and save to out_mask_nii.
+
+    Conventions:
+      - NIfTI mask is expected to be stored as (X,Y,1) or (X,Y) and will be converted
+        internally to (Y,X) to match the patch/stitch code.
+      - Resampling uses nearest-neighbour to preserve binariness.
+    """
+    import numpy as np
+    import nibabel as nib
+    from pathlib import Path
+    from skimage.transform import resize
+    from zarrnii import ZarrNii
+
+    # --- target shape from OME-Zarr at requested level ---
+    zn = ZarrNii.from_ome_zarr_zip(path=Path(input_zarr_zip), level=int(zarr_level))
+    arr = zn.darr
+
+    # mirror make_patches/structure_tensor squeeze logic
+    if arr.ndim >= 3:
+        try:
+            arr = arr[:, int(channel_index), ...]
+        except Exception:
+            pass
+    arr = arr.squeeze()
+    if arr.ndim != 2:
+        raise ValueError(f"Expected 2D OME-Zarr slice after squeeze; got shape {arr.shape}")
+    Ht, Wt = map(int, arr.shape)  # (Y,X)
+
+    # --- load source mask (level-5 grid) ---
+    nii = nib.load(mask_nii)
+    src = np.asanyarray(nii.dataobj)
+    src = np.squeeze(src)
+    if src.ndim != 2:
+        raise ValueError(f"Mask NIfTI must be 2D after squeeze; got shape {src.shape}")
+
+    # --- resample to target (Y,X) with nearest neighbour ---
+    m_rs = resize(
+        src.astype(np.float32),
+        (Ht, Wt),
+        order=0,              # nearest
+        mode="edge",
+        preserve_range=True,
+        anti_aliasing=False,
+    )
+    m_bin = (m_rs > 0.5).astype(np.uint8)
+
+    # --- save as NIfTI in pipeline convention (X,Y,1) ---
+    out_p = Path(out_mask_nii)
+    out_p.parent.mkdir(parents=True, exist_ok=True)
+    out = m_bin.T # Convert (X,Y) -> (Y,X)
+    out_xyz1 = out[:, :, None]  # (Y,X,1)
+
+    out_nii = nib.Nifti1Image(out_xyz1, affine=nii.affine)
+    out_nii.set_data_dtype(np.uint8)
+    nib.save(out_nii, str(out_p))
 
 rule compute_structure_tensor:
     input:
@@ -139,7 +201,7 @@ rule compute_structure_tensor:
         )
 
 
-rule qc_lobe_vis:
+rule qc_theta_vis:
     input:
         roi   = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/roi.npy",
         theta = f"{PATCH_DIR}/py{{py}}_px{{px}}/st_outputs/theta.npy",
@@ -176,27 +238,56 @@ rule qc_lobe_vis:
             cmd += ["--ai-thresh", str(params.AI_thresh)]
         shell(" ".join(cmd))
 
+rule resample_mask:
+    output:
+        mask = MASK_NII
+    params:
+        mask_nii = lambda wc: config.get("mask_nii", None),
+        input_zarr_zip    = config["input_zarr_zip"],
+        zarr_level        = config["zarr_level"],
+        channel_index     = config["channel_index"],
+    run:
+        if params.mask_nii is None:
+            raise ValueError("config.yml is missing 'mask_nii' (path to your level-5 NIfTI mask).")
+
+        load_mask_2d(
+            mask_nii=params.mask_nii,
+            input_zarr_zip=params.input_zarr_zip,
+            zarr_level=int(params.zarr_level),
+            channel_index=int(params.channel_index),
+            out_mask_nii=output.mask,
+        )
 
 rule stitch_maps:
     input:
         tsv      = PATCHES_TSV,
         shape    = SHAPE_JSON,
         allpatch = patch_targets,
+        mask = MASK_NII,
     output:
         orientation = f"{OUTDIR}/stitched/orientation.png",
-        AI          = f"{OUTDIR}/stitched/AI.png",
+        AI_png      = f"{OUTDIR}/stitched/AI.png",
         lobes       = f"{OUTDIR}/stitched/lobes.png",
         ellipsoids  = f"{OUTDIR}/stitched/ellipsoids.png",
+        theta_nii   = f"{OUTDIR}/stitched/theta.nii.gz",
+        AI_nii      = f"{OUTDIR}/stitched/AI.nii.gz",
     params:
-        patch_root = PATCH_DIR,
+        patch_root     = PATCH_DIR,
+        input_zarr_zip = config["input_zarr_zip"],
+        zarr_level     = config["zarr_level"],
     shell:
         r"""
         python scripts/stitch_maps.py \
           --patches-tsv "{input.tsv}" \
           --shape-json "{input.shape}" \
           --patch-root "{params.patch_root}" \
+          --input-zarr-zip "{params.input_zarr_zip}" \
+          --zarr-level {params.zarr_level} \
+          --mask-nifti "{input.mask}" \
           --out-orientation "{output.orientation}" \
-          --out-ai "{output.AI}" \
+          --out-ai "{output.AI_png}" \
           --out-lobes "{output.lobes}" \
-          --out-ellipsoids "{output.ellipsoids}"
+          --out-ellipsoids "{output.ellipsoids}" \
+          --out-theta-nifti "{output.theta_nii}" \
+          --out-ai-nifti "{output.AI_nii}"
         """

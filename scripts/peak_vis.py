@@ -18,42 +18,53 @@ from scipy.interpolate import CubicSpline
 
 
 def hist_theta(K, theta, AI, AI_power=1.0, AI_thresh=None):
+    """
+    Convert the pixelwise orientation field into a distribution over angle through [0,pi]
+    Generates orientation histogram for a given patch
+    """
     edges = np.linspace(0.0, np.pi, K + 1, endpoint=True)
     th = np.asarray(theta).ravel()
     ai = np.asarray(AI).ravel()
 
-    if AI_thresh is not None:
+    # optional: filter out pixels with low AI
+    if AI_thresh is not None: 
         keep = ai >= AI_thresh
         th, ai = th[keep], ai[keep]
 
-    w = np.power(ai, AI_power) if AI_power is not None else np.ones_like(ai, dtype=float)
+    # optional: add weight by AI 
+    w = np.power(ai, AI_power) if AI_power is not None else np.ones_like(ai, dtype=float) 
+    
+    # raw histogram 
     H, _ = np.histogram(th, bins=edges, weights=w)
     H = H.astype(float)
-    H /= (H.sum() + 1e-12)
-    alpha = 0.5 * (edges[:-1] + edges[1:])
-    return H, alpha, edges
+
+    # smooth so peaks are less sensitive to noise 
+    H_smooth = gaussian_filter1d(H, 3, mode="wrap")
+    H_smooth /= (H_smooth.sum() + 1e-12) # normalize histogram so it's a probability distribution over angles 
+    alpha = 0.5 * (edges[:-1] + edges[1:]) # computes bin centre 
+    return H_smooth, alpha, edges
 
 
-def circular_harmonics(alpha, H, M=10):
-    # model: f(α) = c0 + Σ_{k=1..M} [a_k cos(2kα) + b_k sin(2kα)]
-    cols = [np.ones_like(alpha)]
-    for k in range(1, M + 1):
-        cols += [np.cos(2 * k * alpha), np.sin(2 * k * alpha)]
-    X = np.column_stack(cols)  # (K, 2M+1)
+# def circular_harmonics(alpha, H, M=10):
+#     # model: f(α) = c0 + Σ_{k=1..M} [a_k cos(2kα) + b_k sin(2kα)]
+#     cols = [np.ones_like(alpha)]
+#     for k in range(1, M + 1):
+#         cols += [np.cos(2 * k * alpha), np.sin(2 * k * alpha)]
+#     X = np.column_stack(cols)  # (K, 2M+1)
 
-    coef, *_ = np.linalg.lstsq(X, H, rcond=None)
-    H_fit = X @ coef
-    H_fit = np.clip(H_fit, 0, None)
-    H_fit /= (H_fit.sum() + 1e-12)
-    return H_fit
+#     coef, *_ = np.linalg.lstsq(X, H, rcond=None)
+#     H_fit = X @ coef
+#     H_fit = np.clip(H_fit, 0, None)
+#     H_fit /= (H_fit.sum() + 1e-12)
+#     return H_fit
 
 
-def top_peaks(alpha, H_fit, peak_distance, peak_num=5):
-    idx, _ = find_peaks(H_fit, distance=int(peak_distance))
+def top_peaks(alpha, H_smooth, peak_distance, peak_num=5):
+    idx, _ = find_peaks(H_smooth, distance=int(peak_distance))
     if idx.size == 0:
         return np.zeros(peak_num, dtype=float), np.zeros(peak_num, dtype=float)
 
-    amps = H_fit[idx]
+    amps = H_smooth[idx]
     angs = alpha[idx]
 
     order = np.argsort(amps)[::-1]
@@ -93,7 +104,7 @@ def ref_colourwheel(theta_np: np.ndarray, alpha: np.ndarray):
     return rgb_alpha, h_alpha
 
 
-def save_theta_hist_figure(roi_np, H, alpha, edges, out_png: Path):
+def save_theta_hist_figure(roi_np, H, alpha, edges, out_png: Path,theta_np=None):
     width = float(edges[1] - edges[0])
     custom_ticks = [0, np.pi / 6, np.pi / 3, np.pi / 2, 4 * np.pi / 6, 5 * np.pi / 6, np.pi]
     custom_labels = [
@@ -126,6 +137,20 @@ def save_theta_hist_figure(roi_np, H, alpha, edges, out_png: Path):
     ax3.imshow(roi_np, cmap="gray", origin="upper")
     ax3.axis("off")
     ax3.set_title("patch preview")
+    # --- overlay ---
+    if theta_np is not None:
+        rgb_alpha, _h_alpha = ref_colourwheel(theta_np, alpha)
+        Hh, Wh = roi_np.shape
+        yc, xc = Hh // 2, Wh // 2
+
+        scale = 3 * float(min(Hh, Wh))
+
+        for a, r_amp, col in zip(alpha, H, rgb_alpha):
+            L = scale * float(r_amp)
+            dx = L * np.cos(a)
+            dy = -L * np.sin(a)  # minus to match image coordinates
+            ax3.plot([xc - dx, xc + dx], [yc - dy, yc + dy], lw=2, color=col)
+    # ----------------------------------------
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -133,10 +158,10 @@ def save_theta_hist_figure(roi_np, H, alpha, edges, out_png: Path):
     plt.close(fig)
 
 
-def render_lobes_overlay_exact(
+def render_lobes(
     roi_np: np.ndarray,
     alpha: np.ndarray,
-    H_fit: np.ndarray,
+    H_smooth: np.ndarray,
     peak_angles: np.ndarray,
     peak_amps: np.ndarray,
     h_alpha: np.ndarray,
@@ -151,7 +176,7 @@ def render_lobes_overlay_exact(
 
     K = alpha.size
     a2 = np.r_[alpha, alpha + np.pi]
-    H2 = np.r_[H_fit, H_fit]
+    H2 = np.r_[H_smooth, H_smooth]
 
     w = np.deg2rad(lobe_halfwidth_deg)
     H_mix = np.zeros_like(H2, dtype=float)
@@ -212,7 +237,7 @@ def render_lobes_overlay_exact(
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def render_primary_ellipsoid_overlay_exact(
+def render_ellipsoid(
     roi_np: np.ndarray,
     eigenvals_np: np.ndarray,
     peak_angle_rad: float,
@@ -268,7 +293,6 @@ def render_primary_ellipsoid_overlay_exact(
     yc = (H - 1) / 2.0
     xc = (W - 1) / 2.0
 
-    # +90° to match your previous convention
     ang = float(peak_angle_rad) + 0.5 * np.pi
     ca = np.cos(ang)
     sa = np.sin(ang)
@@ -323,18 +347,18 @@ def main():
     AI = np.load(args.ai_npy)
     eigenvals = np.load(args.eigenvals_npy)
 
-    H, alpha, edges = hist_theta(
+    H_smooth, alpha, edges = hist_theta(
         K=args.bins,
         theta=theta,
         AI=AI,
         AI_power=args.ai_power,
         AI_thresh=args.ai_thresh,
     )
-    H_fit = circular_harmonics(alpha=alpha, H=H, M=args.harmonic_m)
+#     H_smooth = circular_harmonics(alpha=alpha, H=H, M=args.harmonic_m)
 
     peak_angles, peak_amps = top_peaks(
         alpha=alpha,
-        H_fit=H_fit,
+        H_smooth=H_smooth,
         peak_distance=args.peak_distance,
         peak_num=5,
     )
@@ -348,14 +372,14 @@ def main():
     args.out_theta_hist_json.write_text(json.dumps(theta_hist_dict, indent=2))
 
     # theta_hist.png (3-panel QC; not pixel-exact required)
-    save_theta_hist_figure(roi, H, alpha, edges, args.out_theta_hist_png)
+    save_theta_hist_figure(roi, H_smooth, alpha, edges, args.out_theta_hist_png, theta_np=theta)
 
     # lobes.png (pixel-exact overlay; use top-2 peaks for pseudo-FOD)
     _rgb_alpha, h_alpha = ref_colourwheel(theta, alpha)
-    lobes_rgb = render_lobes_overlay_exact(
+    lobes_rgb = render_lobes(
         roi_np=roi,
         alpha=alpha,
-        H_fit=H_fit,
+        H_smooth=H_smooth,
         peak_angles=peak_angles,
         peak_amps=peak_amps,
         h_alpha=h_alpha,
@@ -364,7 +388,7 @@ def main():
     Image.fromarray(lobes_rgb, mode="RGB").save(args.out_lobes_png)
 
     # ellipsoids.png (pixel-exact overlay; primary peak only)
-    ell_rgb = render_primary_ellipsoid_overlay_exact(
+    ell_rgb = render_ellipsoid(
         roi_np=roi,
         eigenvals_np=eigenvals,
         peak_angle_rad=float(peak_angles[0]),

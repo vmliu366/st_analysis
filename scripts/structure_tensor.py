@@ -10,11 +10,32 @@ from dask.array.gufunc import apply_gufunc
 from PIL import Image
 from matplotlib.colors import hsv_to_rgb
 from matplotlib import cm
+from PIL import Image
 
 from zarrnii import ZarrNii
 
 
 def construct_tensor(roi, sigma_g, sigma_w, truncate):
+    """
+    calculate structure tensor
+
+    inputs: 
+        roi: a 2D array of the image / patch
+    sigma_g: 
+        Standard deviation of derivative of Gaussian kernel (pixels). 
+        Analogous to setting the diffusion time in a dMRI experiment as it influences the size of the environment that contributes to the structure tensor
+    sigma_w:
+        Standard deviation of Gaussian kernel (pixels).
+        Analogous to setting the pixel size/resolution in a dMRI experiment, as this sets the size of the neighbourhood which will be averaged.
+    truncate:
+        Truncate the filter at this many standard deviation. 
+
+    Adapted from: 
+        Author: Bradley Karat
+        University of Western Ontario
+        April 14th, 2025
+        Email: bkarat@uwo.ca
+    """
     gx = dask_image.ndfilters.gaussian_filter(
         roi, sigma=sigma_g, order=(1, 0), mode="nearest", truncate=truncate
     )
@@ -89,10 +110,20 @@ def save_rgb_png(rgb8: np.ndarray, out_png: Path):
     out_png.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(rgb8, mode="RGB").save(out_png)
 
-def save_grayscale_png(img: np.ndarray, out_png: Path):
+def save_colormap_png(ai_np: np.ndarray, out_png, cmap_name="inferno"):
+    ai = np.nan_to_num(ai_np, nan=0.0, posinf=0.0, neginf=0.0)
+    ai = np.clip(ai, 0.0, 1.0)
+    cmap = cm.get_cmap(cmap_name)
+
+    # Map scalar → RGBA in [0,1]
+    rgba = cmap(ai)
+
+    # Drop alpha channel
+    rgb = rgba[..., :3]
+    rgb8 = (rgb * 255).astype(np.uint8)
+
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    u8 = (np.clip(img, 0.0, 1.0) * 255.0).astype(np.uint8)
-    Image.fromarray(u8, mode="L").save(out_png)
+    Image.fromarray(rgb8, mode="RGB").save(out_png)
 
 
 def main():
@@ -120,7 +151,7 @@ def main():
     y0, y1, x0, x1 = args.patch
     patch = zn2d[y0:y1, x0:x1]
 
-    # right now this does local normalization per patch (fast), but seams may appear in full mosaics (!!)
+    # right now this does local normalization per patch (fast), but seams may appear in full slide after stitching (!!)
     patch = patch.astype(np.float32)
     patch = patch / (da.max(patch) + 1e-12) * 255.0
 
@@ -146,7 +177,7 @@ def main():
     rgb8 = compute_orientation_rgb(patch_np, theta_np, AI_np)
     np.save(out_arrays / "orientation.npy", rgb8)
     save_rgb_png(rgb8, out_figs / "orientation.png") 
-    save_grayscale_png(AI_np, out_figs / "AI.png")
+    save_colormap_png(AI_np, out_figs / "AI.png",cmap_name="plasma")
 
 
 if __name__ == "__main__":

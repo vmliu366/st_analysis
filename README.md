@@ -6,6 +6,6 @@ This repository implements a patch-based structure tensor analysis workflow for 
 ## TO-DOs
 - [ ] add in OD maps
 - [ ] add in 3D registration 
-
-- [ ] remove stitching artifacts (at patch seams)
-- [ ] sanity checks to assert final stitched image matches expected ROI size 
+- [ ] fix stitching artifacts (global normalization)
+- [ ] implement lazy loading per patch 
+- [ ] reorganize for clean structure 
