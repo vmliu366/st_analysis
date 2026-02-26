@@ -64,7 +64,7 @@ def construct_tensor(roi, sigma_g, sigma_w, truncate):
     fyy_ = J[:, :, 1, 1]
     fxx_ = J[:, :, 0, 0]
     fxy_ = J[:, :, 0, 1]
-    theta = 0.5 * da.angle((fyy_ - fxx_) + 1j * 2 * fxy_) # theta here is calculated by the closed-form formula of structure tensor -> avoids per-pixel eigendecomposition (numerically stable)
+    theta = 0.5 * da.angle((fxx_ - fyy_) + 1j * 2 * fxy_) # theta here is calculated by the closed-form formula of structure tensor -> avoids per-pixel eigendecomposition (numerically stable)
     mask = theta < 0
     adjusted = da.angle(da.exp(1j * theta) * da.exp(1j * np.pi))
     theta = da.where(mask, adjusted, theta)  # radians

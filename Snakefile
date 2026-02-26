@@ -216,7 +216,6 @@ rule qc_theta_vis:
         bins          = config["bins"],
         AI_power      = config["AI_power"],
         AI_thresh     = config["AI_thresh"],
-        harmonic_M    = config["harmonic_M"],
         peak_distance = config["peak_distance"],
     run:
         cmd = [
@@ -231,7 +230,6 @@ rule qc_theta_vis:
             "--out-ellipsoids-png", output.ellipsoids_png,
             "--bins", str(params.bins),
             "--ai-power", str(params.AI_power),
-            "--harmonic-m", str(params.harmonic_M),
             "--peak-distance", str(params.peak_distance),
         ]
         if params.AI_thresh is not None:

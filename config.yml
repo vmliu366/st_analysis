@@ -1,13 +1,13 @@
 input_zarr_zip: "/nfs/khan/datasets/histo2mri/bids/sub-T20/micr/sub-T20_sample-anterior_acq-MICA20x_stain-LFB_chunk-024_BF.ome.zarr.zip"
-zarr_level: 5
+zarr_level: 3
 channel_index: 0
 mask_nii: "/nfs/khan/trainees/mliu366/2_histo3D_reg/data/IHC_nii/sub-T20_ses-01_chunk-024_stain-LFB_mask.nii.gz"
 
-out_dir: "results/level-5"
+out_dir: "test/level-3"
 
 # Patch tiling
-patch_height: 100
-patch_width: 100
+patch_height: 1000
+patch_width: 1000
 patch_overlap_y: 0
 patch_overlap_x: 0
 edge_mode: "drop"
@@ -15,11 +15,13 @@ edge_mode: "drop"
 # Structure tensor parameters
 sigma_g: 2
 sigma_w: 4
-truncate: 7
+truncate: 3
 
 # Histogram / peak parameters
 bins: 64
 AI_power: 1.0
 AI_thresh: null
-harmonic_M: 10
-peak_distance: 3
+peak_distance: 10
+
+# level 3 + 200x200; sigma_g: 2; sigma_2: 4; truncate:3; peak_distance:10 
+# level 5 + 50x50

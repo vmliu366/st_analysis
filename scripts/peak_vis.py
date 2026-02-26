@@ -45,20 +45,6 @@ def hist_theta(K, theta, AI, AI_power=1.0, AI_thresh=None):
     return H_smooth, alpha, edges
 
 
-# def circular_harmonics(alpha, H, M=10):
-#     # model: f(α) = c0 + Σ_{k=1..M} [a_k cos(2kα) + b_k sin(2kα)]
-#     cols = [np.ones_like(alpha)]
-#     for k in range(1, M + 1):
-#         cols += [np.cos(2 * k * alpha), np.sin(2 * k * alpha)]
-#     X = np.column_stack(cols)  # (K, 2M+1)
-
-#     coef, *_ = np.linalg.lstsq(X, H, rcond=None)
-#     H_fit = X @ coef
-#     H_fit = np.clip(H_fit, 0, None)
-#     H_fit /= (H_fit.sum() + 1e-12)
-#     return H_fit
-
-
 def top_peaks(alpha, H_smooth, peak_distance, peak_num=5):
     idx, _ = find_peaks(H_smooth, distance=int(peak_distance))
     if idx.size == 0:
@@ -337,7 +323,6 @@ def main():
     ap.add_argument("--bins", required=True, type=int)
     ap.add_argument("--ai-power", required=True, type=float)
     ap.add_argument("--ai-thresh", type=float, default=None)
-    ap.add_argument("--harmonic-m", required=True, type=int)
     ap.add_argument("--peak-distance", required=True, type=int)
 
     args = ap.parse_args()
@@ -354,7 +339,6 @@ def main():
         AI_power=args.ai_power,
         AI_thresh=args.ai_thresh,
     )
-#     H_smooth = circular_harmonics(alpha=alpha, H=H, M=args.harmonic_m)
 
     peak_angles, peak_amps = top_peaks(
         alpha=alpha,

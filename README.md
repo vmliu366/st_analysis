@@ -6,6 +6,5 @@ This repository implements a patch-based structure tensor analysis workflow for 
 ## TO-DOs
 - [ ] add in OD maps
 - [ ] add in 3D registration 
-- [ ] fix stitching artifacts (global normalization)
-- [ ] implement lazy loading per patch 
-- [ ] reorganize for clean structure 
+- [ ] implement lazy loading per patch -> dask
+- [ ] tract tracing
