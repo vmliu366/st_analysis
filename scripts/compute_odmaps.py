@@ -143,7 +143,7 @@ def process_images(
         path = input_dir / fname
         if not path.exists():
             raise FileNotFoundError(f"Missing input: {path}")
-        zarr_img = ZarrNii.from_ome_zarr_zip(path=path, level=level)
+        zarr_img = ZarrNii.from_ome_zarr(store_or_path=path, level=level)
 
         tmp_darr = zarr_img.darr.squeeze(axis=0)  # (T,C,Z,Y,X) -> (C,Z,Y,X) if present
         zarr_img.darr = tmp_darr

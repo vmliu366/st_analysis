@@ -215,8 +215,8 @@ def main():
         Image.fromarray(ai_canvas).save(args.out_ai)
 
     # ---- Save scientific NIfTI outputs ----
-    zn_template = ZarrNii.from_ome_zarr_zip(
-        path=args.input_zarr_zip,
+    zn_template = ZarrNii.from_ome_zarr(
+        store_or_path=args.input_zarr_zip,
         level=args.zarr_level
     )
 

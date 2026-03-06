@@ -73,7 +73,7 @@ def construct_tensor(roi, sigma_g, sigma_w, truncate):
 
 
 def load_znimg_2d(input_zarr_zip: Path, level: int, channel_index: int):
-    znimg = ZarrNii.from_ome_zarr_zip(path=input_zarr_zip, level=level)
+    znimg = ZarrNii.from_ome_zarr(store_or_path=input_zarr_zip, level=level)
     arr = znimg.darr
 
     # Same intent as your previous logic
