@@ -187,7 +187,8 @@ def process_images(
     for idx, _img in tqdm(list(enumerate(od_maps_znimgs)), desc="saving NIfTIs"):
         chunk = original_chunk_numbers[idx]
         nifti_name = output_dir / f"{out_prefix}_chunk-{chunk:03d}_desc-level{level}_ODmaps.nii.gz"
-        to_nifti(od_maps_znimgs[idx], filename=nifti_name)
+        od_maps_znimgs[idx].to_nifti(nifti_name)
+#        to_nifti(od_maps_znimgs[idx], filename=nifti_name)
         out_files.append(str(nifti_name))
 
     # also write a small manifest for provenance

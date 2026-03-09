@@ -1,4 +1,4 @@
-input_zarr_zip: "/nfs/khan/datasets/histo2mri/bids/sub-T20/micr/sub-T20_sample-anterior_acq-MICA20x_stain-LFB_chunk-024_BF.ome.zarr.zip"
+input_zarr_zip: "/nfs/khan/trainees/dbansal7/extracted_data/sub-T20_sample-anterior_acq-MICA40x_stain-LFB_chunk-024_BF.ome.zarr/0"
 zarr_level: 5
 channel_index: 0
 mask_nii: "/nfs/khan/trainees/mliu366/2_histo3D_reg/data/IHC_nii/sub-T20_ses-01_chunk-024_stain-LFB_mask.nii.gz"

@@ -13,6 +13,38 @@ from zarrnii import ZarrNii
 # Utilities
 # ---------------------------------------------------------
 
+def reorder_affine_xyz_zyx(affine):
+    """
+    Reorders the affine matrix from ZYX to XYZ axes order and adjusts the translation.
+
+    Parameters:
+        affine (np.ndarray): Affine matrix in ZYX order.
+
+    Returns:
+        np.ndarray: Affine matrix reordered to XYZ order.
+    """
+    # Reordering matrix to go from ZYX to XYZ
+    reorder_xfm = np.array(
+        [
+            [0, 0, 1, 0],  # Z -> X
+            [0, 1, 0, 0],  # Y -> Y
+            [1, 0, 0, 0],  # X -> Z
+            [0, 0, 0, 1],  # Homogeneous row
+        ]
+    )
+
+    # Apply reordering to the affine matrix
+    affine_reordered = affine @ reorder_xfm
+
+    # Adjust translation (last column)
+    translation_zyx = affine[:3, 3]
+    reorder_perm = [2, 1, 0]  # Map ZYX -> XYZ
+    translation_xyz = translation_zyx[reorder_perm]
+
+    # Update reordered affine with adjusted translation
+    affine_reordered[:3, 3] = translation_xyz
+    return affine_reordered
+
 def read_patches(tsv_path: Path):
     patches = []
     with tsv_path.open("r") as f:
@@ -41,7 +73,7 @@ def get_affine_from_zarr(zn: ZarrNii):
     Mirror your working OD script logic.
     """
     if getattr(zn, "axes_order", None) == "ZYX":
-        return zn.reorder_affine_xyz_zyx(zn.affine.matrix)
+        return reorder_affine_xyz_zyx(zn.affine.matrix)
     else:
         return np.array([
             [0,  0,  1,  0],
