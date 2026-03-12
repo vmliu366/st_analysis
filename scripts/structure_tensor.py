@@ -14,6 +14,8 @@ from PIL import Image
 
 from zarrnii import ZarrNii
 
+import zarr
+
 
 def construct_tensor(roi, sigma_g, sigma_w, truncate):
     """
@@ -73,7 +75,9 @@ def construct_tensor(roi, sigma_g, sigma_w, truncate):
 
 
 def load_znimg_2d(input_zarr_zip: Path, level: int, channel_index: int):
-    znimg = ZarrNii.from_ome_zarr(store_or_path=input_zarr_zip, level=level)
+    store = zarr.storage.ZipStore(input_zarr_zip, mode="r")
+    znimg = ZarrNii.from_ome_zarr(store_or_path=store, level=level)
+
     arr = znimg.darr
 
     # Same intent as your previous logic

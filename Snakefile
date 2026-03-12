@@ -1,3 +1,5 @@
+import zarr
+
 configfile: "config.yml"
 
 OUTDIR = config["out_dir"]
@@ -116,7 +118,8 @@ def load_mask_2d(mask_nii: str, input_zarr_zip: str, zarr_level: int, channel_in
     from zarrnii import ZarrNii
 
     # --- target shape from OME-Zarr at requested level ---
-    zn = ZarrNii.from_ome_zarr(store_or_path=Path(input_zarr_zip), level=int(zarr_level))
+    store = zarr.storage.ZipStore(input_zarr_zip, mode="r")
+    zn = ZarrNii.from_ome_zarr(store_or_path=store, level=int(zarr_level))
     arr = zn.darr
 
     # mirror make_patches/structure_tensor squeeze logic

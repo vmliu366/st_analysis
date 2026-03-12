@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 import nibabel as nib
 from zarrnii import ZarrNii
+import zarr
 
 
 # ---------------------------------------------------------
@@ -247,10 +248,8 @@ def main():
         Image.fromarray(ai_canvas).save(args.out_ai)
 
     # ---- Save scientific NIfTI outputs ----
-    zn_template = ZarrNii.from_ome_zarr(
-        store_or_path=args.input_zarr_zip,
-        level=args.zarr_level
-    )
+    store = zarr.storage.ZipStore(args.input_zarr_zip, mode="r")
+    zn_template = ZarrNii.from_ome_zarr(store_or_path=store, level=args.zarr_level)
 
     save_float_map_as_nifti(theta_full, zn_template, args.out_theta_nifti)
     save_float_map_as_nifti(ai_full, zn_template, args.out_ai_nifti)

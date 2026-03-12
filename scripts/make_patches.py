@@ -5,10 +5,12 @@ import json
 from pathlib import Path
 
 from zarrnii import ZarrNii
+import zarr
 
 
 def load_shape_2d(input_zarr_zip: Path, level: int, channel_index: int):
-    znimg = ZarrNii.from_ome_zarr(store_or_path=input_zarr_zip, level=level)
+    store = zarr.storage.ZipStore(input_zarr_zip, mode="r")
+    znimg = ZarrNii.from_ome_zarr(store_or_path=store, level=level)
     arr = znimg.darr
 
     # mirror structure_tensor.py logic
